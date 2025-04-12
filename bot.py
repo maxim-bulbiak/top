@@ -39,7 +39,7 @@ async def get_last_hour_change(session, symbol):
 async def parse_top_coins():
     symbols = await get_symbols()
     async with aiohttp.ClientSession() as session:
-        tasks = [get_last_hour_change(session, symbol) for symbol in symbols[:1500]]
+        tasks = [get_last_hour_change(session, symbol) for symbol in symbols[:900]]
         results = await asyncio.gather(*tasks)
     filtered = [r for r in results if r]
     filtered = sorted(filtered, key=lambda x: x['change_1h'], reverse=True)
