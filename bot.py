@@ -46,6 +46,24 @@ async def get_last_2_hours_change(session, symbol):
                 "change2": round(change2, 2)
             }
         return None
+# --- Автоматичне повідомлення про топ токени кожні 5 хв
+async def auto_send_top_tokens():
+    while True:
+        coins = await parse_top_coins()
+        if coins:
+            response = "📈 Автооновлення: Топ токени з приростом:\n"
+            for coin in coins[:10]:
+                response += (
+                    f"\n🔹 {coin['symbol']}\n"
+                    f"2 год тому: {coin['prev2']}\n"
+                    f"1 год тому: {coin['prev1']}\n"
+                    f"Зараз: {coin['current']}\n"
+                    f"Зміна за годину: {coin['change1']}%\n"
+                    f"Зміна зараз: {coin['change2']}%\n"
+                )
+            await bot.send_message(CHAT_ID, response)
+        await asyncio.sleep(300)  # 5 хвилин
+
 
 # --- Парсинг топ монет
 async def parse_top_coins():
@@ -85,7 +103,9 @@ async def send_start_message():
 # --- Головна функція
 async def main():
     await send_start_message()
+    asyncio.create_task(auto_send_top_tokens())
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
