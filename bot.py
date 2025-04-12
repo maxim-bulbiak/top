@@ -21,24 +21,16 @@ async def get_first_10_symbols():
     print("🔍 Отримую список USDT-пар з Binance...")
     url = "https://api.binance.com/api/v3/exchangeInfo"
     async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url) as resp:
-                print(f"📡 Binance API статус: {resp.status}")
-                if resp.status != 200:
-                    print("❌ Не вдалося отримати exchangeInfo")
-                    return []
-
-                data = await resp.json()
-                all_symbols = [
-                    s['symbol'] for s in data.get('symbols', [])
-                    if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT'
-                ]
-                first_10 = all_symbols[:10]
-                print(f"✅ Знайдено {len(first_10)} пар: {first_10}")
-                return first_10
-        except Exception as e:
-            print(f"🚨 Помилка при запиті exchangeInfo: {e}")
-            return []
+        async with session.get(url) as resp:
+            print("🔢 Код відповіді Binance:", resp.status)
+            data = await resp.json()
+            print("📥 exchangeInfo (обрізано):", list(data.keys())[:5])
+            all_symbols = [
+                s['symbol'] for s in data.get('symbols', [])
+                if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT'
+            ]
+            print(f"✅ Знайдено {len(all_symbols)} пар (вивожу перші 10): {all_symbols[:10]}")
+            return all_symbols[:10]
 
 # --- Отримання ціни для пари
 async def get_price(session, symbol):
