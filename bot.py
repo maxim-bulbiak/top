@@ -25,27 +25,33 @@ async def get_symbols():
 # --- Зміни за 2 години
 async def get_last_2_hours_change(session, symbol):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=3"
-    async with session.get(url) as resp:
-        kline = await resp.json()
-        if len(kline) < 3:
-            return None
-        prev2 = float(kline[0][4])
-        prev1 = float(kline[1][4])
-        current = float(kline[2][4])
+    try:
+        async with session.get(url) as resp:
+            kline = await resp.json()
+            if len(kline) < 3:
+                return None
+            prev2 = float(kline[0][4])
+            prev1 = float(kline[1][4])
+            current = float(kline[2][4])
 
-        change1 = ((prev1 - prev2) / prev2) * 100
-        change2 = ((current - prev1) / prev1) * 100
+            change1 = ((prev1 - prev2) / prev2) * 100
+            change2 = ((current - prev1) / prev1) * 100
 
-        if change2 > 1 or (change1 > 1 and change2 > 1):
-            return {
-                "symbol": symbol,
-                "prev2": prev2,
-                "prev1": prev1,
-                "current": current,
-                "change1": round(change1, 2),
-                "change2": round(change2, 2)
-            }
-        return None
+            if change2 > 1 or (change1 > 1 and change2 > 1):
+                print(f"[DEBUG] {symbol} пройшов фільтр: {change1:.2f}% → {change2:.2f}%")
+                return {
+                    "symbol": symbol,
+                    "prev2": prev2,
+                    "prev1": prev1,
+                    "current": current,
+                    "change1": round(change1, 2),
+                    "change2": round(change2, 2)
+                }
+            else:
+                print(f"[DEBUG] {symbol} не пройшов фільтр: {change1:.2f}% → {change2:.2f}%")
+    except Exception as e:
+        print(f"[ERROR] Не вдалося обробити {symbol}: {e}")
+    return None
 
 # --- Парсинг топ монет
 async def parse_top_coins():
@@ -54,6 +60,8 @@ async def parse_top_coins():
         tasks = [get_last_2_hours_change(session, symbol) for symbol in symbols[:900]]
         results = await asyncio.gather(*tasks)
     return sorted([r for r in results if r], key=lambda x: x['change2'], reverse=True)
+    
+
 
 # --- Команда /top
 @dp.message(Command("top"))
