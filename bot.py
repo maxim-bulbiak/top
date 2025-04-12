@@ -1,6 +1,9 @@
 import aiohttp
 import asyncio
 import os
+import aiogram
+
+print("Aiogram version:", aiogram.__version__)
 
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
