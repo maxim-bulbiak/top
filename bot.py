@@ -1,93 +1,58 @@
-import os
-import aiohttp
 import asyncio
-from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.fsm.storage.memory import MemoryStorage
+import aiohttp
+import logging
+from telegram import Bot
+from telegram.ext import Application, CommandHandler
 
-load_dotenv()
+# Налаштування логування
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# Ваш токен бота та ID чату
+BOT_TOKEN = 'YOUR_BOT_TOKEN'
+CHAT_ID = 'YOUR_CHAT_ID'
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+# URL сторінки оголошень Binance
+BINANCE_ANNOUNCEMENTS_URL = 'https://www.binance.com/en/support/announcement/list/161'
 
-# --- Запасні символи, якщо Binance API не працює
-FALLBACK_SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT"]
+# Зберігаємо останній заголовок для перевірки нових оголошень
+last_title = None
 
-# --- Отримання перших 10 пар з Binance (з USDT)
-async def get_first_10_symbols():
-    print("🔍 Отримую список USDT-пар з Binance...")
-    url = "https://api.binance.com/api/v3/exchangeInfo"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                print("🔢 Код відповіді Binance:", resp.status)
-                if resp.status != 200:
-                    print("❌ Binance API повернуло помилку. Використовую запасні пари.")
-                    return FALLBACK_SYMBOLS
-                data = await resp.json()
-                symbols = [
-                    s['symbol'] for s in data.get('symbols', [])
-                    if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT'
-                ]
-                if not symbols:
-                    print("⚠️ Отримано 0 пар. Використовую запасні.")
-                    return FALLBACK_SYMBOLS
-                print(f"✅ Отримано {len(symbols)} пар. Перші 10: {symbols[:10]}")
-                return symbols[:10]
-    except Exception as e:
-        print(f"❗ Виняток при зверненні до Binance: {e}")
-        return FALLBACK_SYMBOLS
-
-# --- Отримання ціни для пари
-async def get_price(session, symbol):
-    print(f"📈 Отримую ціну для: {symbol}")
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-    try:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                print(f"⚠️ Не вдалося отримати ціну для {symbol}, код: {resp.status}")
-                return symbol, "N/A"
-            data = await resp.json()
-            price = data.get('price', "N/A")
-            print(f"→ {symbol}: {price}")
-            return symbol, price
-    except Exception as e:
-        print(f"❗ Помилка для {symbol}: {e}")
-        return symbol, "N/A"
-
-# --- Команда /prices
-@dp.message(Command("prices"))
-async def handle_prices_command(message: types.Message):
-    print(f"📬 Отримано команду /prices від {message.from_user.username}")
-    await message.answer("📡 Отримую ціни для 10 пар...")
-
-    symbols = await get_first_10_symbols()
-
+async def fetch_latest_announcement():
     async with aiohttp.ClientSession() as session:
-        tasks = [get_price(session, symbol) for symbol in symbols]
-        prices = await asyncio.gather(*tasks)
+        async with session.get(BINANCE_ANNOUNCEMENTS_URL) as response:
+            if response.status == 200:
+                text = await response.text()
+                # Тут потрібно реалізувати парсинг HTML, щоб витягти заголовок останнього оголошення
+                # Наприклад, використовуючи регулярні вирази або бібліотеку BeautifulSoup
+                # Для прикладу, припустимо, що ми отримали заголовок:
+                latest_title = "Приклад заголовка"
+                return latest_title
+            else:
+                logger.error(f"Помилка при отриманні сторінки: {response.status}")
+                return None
 
-    response = "💱 Поточні ціни:\n"
-    for symbol, price in prices:
-        response += f"• {symbol}: {price}\n"
+async def check_for_new_announcement(bot):
+    global last_title
+    while True:
+        latest_title = await fetch_latest_announcement()
+        if latest_title and latest_title != last_title:
+            last_title = latest_title
+            await bot.send_message(chat_id=CHAT_ID, text=f"Нове оголошення: {latest_title}")
+        await asyncio.sleep(300)  # Перевірка кожні 5 хвилин
 
-    print("📤 Відправляю повідомлення з цінами")
-    await message.answer(response)
+async def start(update, context):
+    await update.message.reply_text('Бот запущено!')
 
-# --- Повідомлення при старті
-async def send_start_message():
-    print("🚀 Бот запущено!")
-    await bot.send_message(CHAT_ID, "🤖 Бот запущено. Команда /prices — покаже ціни 10 пар.")
-
-# --- Головна функція
 async def main():
-    print("🟢 Запускаємо головну подію...")
-    await send_start_message()
-    await dp.start_polling(bot)
+    application = Application.builder().token(BOT_TOKEN).build()
 
-if __name__ == "__main__":
+    application.add_handler(CommandHandler("start", start))
+
+    # Запуск задачі перевірки нових оголошень
+    asyncio.create_task(check_for_new_announcement(application.bot))
+
+    await application.run_polling()
+
+if __name__ == '__main__':
     asyncio.run(main())
