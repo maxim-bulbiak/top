@@ -80,13 +80,7 @@ async def handle_top_command(message: types.Message):
         )
     await message.answer(response)
     
-@dp.message(Command("checking"))
-async def handle_checking_command(message: types.Message):
-    await message.answer("🔍 Отримую токени, які перевіряються...")
-    symbols = await get_symbols()
-    checking = symbols[:10]  # Перші 10 токенів зі списку
-    response = "🔎 Перевіряю ці токени:\n" + "\n".join(f"• {s}" for s in checking)
-    await message.answer(response)
+
 
 # --- Повідомлення при старті
 async def send_start_message():
