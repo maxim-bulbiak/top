@@ -32,7 +32,7 @@ async def get_last_2_hours_change(session, symbol):
         change_prev1 = ((prev1_close - prev2_close) / prev2_close) * 100
         change_current = ((current_close - prev1_close) / prev1_close) * 100
 
-        if change_current > 5 or (change_prev1 > 2 and change_current > 2):
+        if change_current > 1 or (change_prev1 > 1 and change_current > 1):
             return {
                 "symbol": symbol,
                 "prev2_close": prev2_close,
@@ -47,7 +47,7 @@ async def get_last_2_hours_change(session, symbol):
 async def parse_top_coins():
     symbols = await get_symbols()
     async with aiohttp.ClientSession() as session:
-        tasks = [get_last_2_hours_change(session, symbol) for symbol in symbols[:1500]]
+        tasks = [get_last_2_hours_change(session, symbol) for symbol in symbols[:100]]
         results = await asyncio.gather(*tasks)
     return sorted([r for r in results if r], key=lambda x: x['change_current'], reverse=True)
 
