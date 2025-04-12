@@ -21,22 +21,29 @@ last_title = None
 
 # Отримання заголовку останньої новини Binance
 async def fetch_latest_announcement():
-    url = 'https://www.binance.com/en/support/announcement/list/161'
-    headers = {'User-Agent': 'Mozilla/5.0'}  # інакше може не віддати HTML
+    url = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query"
+    params = {
+        "type": "1",
+        "catalogId": "161",
+        "pageNo": "1",
+        "pageSize": "1"
+    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
+        async with session.get(url, params=params, headers=headers) as resp:
             if resp.status == 200:
-                html = await resp.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                title_tag = soup.select_one("a.css-6f91y1")  # перший заголовок
-                if title_tag:
-                    return title_tag.text.strip()
-                else:
-                    logger.warning("Не вдалося знайти заголовок новини.")
-                    return None
+                data = await resp.json()
+                try:
+                    articles = data["data"]["articles"]
+                    if articles:
+                        return articles[0]["title"]
+                except Exception as e:
+                    logger.error(f"Помилка розбору JSON: {e}")
             else:
                 logger.error(f"Помилка запиту: {resp.status}")
-                return None
+            return None
+
 
 # Фоновий цикл перевірки
 async def check_announcements(bot: Bot):
