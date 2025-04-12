@@ -14,83 +14,49 @@ CHAT_ID = os.getenv("CHAT_ID")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# --- Отримання пар з Binance
-async def get_symbols():
+# --- Отримання перших 10 пар з Binance (з USDT)
+async def get_first_10_symbols():
     url = "https://api.binance.com/api/v3/exchangeInfo"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             data = await resp.json()
-            return [s['symbol'] for s in data.get('symbols', []) if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT']
+            all_symbols = [
+                s['symbol'] for s in data.get('symbols', [])
+                if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT'
+            ]
+            return all_symbols[:10]
 
-# --- Зміни за 2 години
-async def get_last_2_hours_change(session, symbol):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=3"
+# --- Отримання ціни для пари
+async def get_price(session, symbol):
+    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
     async with session.get(url) as resp:
-        kline = await resp.json()
-        if len(kline) < 3:
-            return None
-        prev2 = float(kline[0][4])
-        prev1 = float(kline[1][4])
-        current = float(kline[2][4])
+        data = await resp.json()
+        return data.get('symbol'), data.get('price')
 
-        change1 = ((prev1 - prev2) / prev2) * 100
-        change2 = ((current - prev1) / prev1) * 100
+# --- Команда /prices
+@dp.message(Command("prices"))
+async def handle_prices_command(message: types.Message):
+    await message.answer("📡 Отримую ціни для 10 пар...")
+    symbols = await get_first_10_symbols()
 
-        if change2 > 1 or (change1 > 1 and change2 > 1):
-            return {
-                "symbol": symbol,
-                "prev2": prev2,
-                "prev1": prev1,
-                "current": current,
-                "change1": round(change1, 2),
-                "change2": round(change2, 2)
-            }
-        return None
-
-
-
-# --- Парсинг топ монет
-async def parse_top_coins():
-    symbols = await get_symbols()
     async with aiohttp.ClientSession() as session:
-        tasks = [get_last_2_hours_change(session, symbol) for symbol in symbols[:900]]
-        results = await asyncio.gather(*tasks)
-    return sorted([r for r in results if r], key=lambda x: x['change2'], reverse=True)
-    
+        tasks = [get_price(session, symbol) for symbol in symbols]
+        prices = await asyncio.gather(*tasks)
 
+    response = "💱 Поточні ціни:\n"
+    for symbol, price in prices:
+        response += f"• {symbol}: {price}\n"
 
-# --- Команда /top
-@dp.message(Command("top"))
-async def handle_top_command(message: types.Message):
-    await message.answer("⏳ Збираю дані...")
-    coins = await parse_top_coins()
-    if not coins:
-        await message.answer("Нічого не знайдено 😕")
-        return
-
-    response = "🔝 Топ токени з приростом:\n"
-    for coin in coins[:10]:
-        response += (
-            f"\n🔹 {coin['symbol']}\n"
-            f"2 год тому: {coin['prev2']}\n"
-            f"1 год тому: {coin['prev1']}\n"
-            f"Зараз: {coin['current']}\n"
-            f"Зміна за годину: {coin['change1']}%\n"
-            f"Зміна зараз: {coin['change2']}%\n"
-        )
     await message.answer(response)
-    
-
 
 # --- Повідомлення при старті
 async def send_start_message():
-    await bot.send_message(CHAT_ID, "🤖 Бот запущено та слухає команди!")
+    await bot.send_message(CHAT_ID, "🤖 Бот запущено. Команда /prices — покаже ціни 10 пар.")
 
 # --- Головна функція
 async def main():
     await send_start_message()
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
