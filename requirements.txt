@@ -1,2 +1,5 @@
-aiogram==3.5.0
 aiohttp
+aiogram==3.*
+fastapi
+uvicorn
+gunicorn
