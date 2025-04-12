@@ -1,98 +1,84 @@
 import aiohttp
 import asyncio
 import os
-import aiogram
+from aiogram import Bot, Dispatcher
 
+TOKEN = os.getenv("BOT_TOKEN")  # Витягуємо з env
+CHAT_ID = os.getenv("CHAT_ID")  # Витягуємо з env
 
-from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
-from aiogram.filters import Command
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-from starlette.requests import Request as StarletteRequest
-from starlette.responses import Response
-
-API_TOKEN = os.getenv("BOT_TOKEN", "7478737876:AAH7CXfRuGhn8Jb1fyVUAcsGrQbTd1hK5K4")
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"https://your-app-name.onrender.com{WEBHOOK_PATH}")
-
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-app = FastAPI()
-
-# --- Binance парсинг
+# --- Функція для отримання списку пар
 async def get_symbols():
     url = "https://api.binance.com/api/v3/exchangeInfo"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             data = await resp.json()
-            return [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING' and s['quoteAsset'] == 'USDT']
+            return [s['symbol'] for s in data.get('symbols', []) if s.get('status') == 'TRADING' and s.get('quoteAsset') == 'USDT']
 
-async def get_last_hour_change(session, symbol):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=2"
+# --- Функція для отримання змін за останні 2 години
+async def get_last_2_hours_change(session, symbol):
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=3"
     async with session.get(url) as resp:
         kline = await resp.json()
-        if len(kline) < 2:
+        if len(kline) < 3:
             return None
-        prev_close = float(kline[0][4])
-        current_close = float(kline[1][4])
-        change_percent = ((current_close - prev_close) / prev_close) * 100
-        if change_percent > 3:
+
+        prev2_close = float(kline[0][4])
+        prev1_close = float(kline[1][4])
+        current_close = float(kline[2][4])
+
+        change_prev1 = ((prev1_close - prev2_close) / prev2_close) * 100
+        change_current = ((current_close - prev1_close) / prev1_close) * 100
+
+        if change_current > 5 or (change_prev1 > 2 and change_current > 2):
             return {
                 "symbol": symbol,
-                "prev_close": prev_close,
+                "prev2_close": prev2_close,
+                "prev1_close": prev1_close,
                 "current_close": current_close,
-                "change_1h": round(change_percent, 2)
+                "change_prev1": round(change_prev1, 2),
+                "change_current": round(change_current, 2)
             }
         return None
 
+# --- Парсимо монети
 async def parse_top_coins():
     symbols = await get_symbols()
     async with aiohttp.ClientSession() as session:
-        tasks = [get_last_hour_change(session, symbol) for symbol in symbols[:900]]
+        tasks = [get_last_2_hours_change(session, symbol) for symbol in symbols[:1500]]
         results = await asyncio.gather(*tasks)
-    filtered = [r for r in results if r]
-    filtered = sorted(filtered, key=lambda x: x['change_1h'], reverse=True)
-    return filtered
+    return sorted([r for r in results if r], key=lambda x: x['change_current'], reverse=True)
 
-# --- Обробники
-@dp.message(Command("top"))
-async def handle_top_command(message: Message):
-    await message.answer("Збираю дані... будь ласка зачекай ⏳")
-    coins = await parse_top_coins()
+# --- Повідомлення з ринку
+async def send_price_updates():
+    while True:
+        coins = await parse_top_coins()
 
-    if not coins:
-        await message.answer("Жоден токен не виріс більше ніж на 3% за останню годину.")
-        return
+        if coins:
+            response = "🔔 Топ токени з приростом:\n"
+            for coin in coins[:10]:
+                response += (
+                    f"\n🔹 {coin['symbol']}\n"
+                    f"Ціна 2 години тому: {coin['prev2_close']}\n"
+                    f"Ціна 1 годину тому: {coin['prev1_close']}\n"
+                    f"Поточна ціна: {coin['current_close']}\n"
+                    f"Зміна за попередню годину: {coin['change_prev1']}%\n"
+                    f"Зміна за поточну годину: {coin['change_current']}%\n"
+                )
+            await bot.send_message(CHAT_ID, response)
 
-    response = "Топ токени з приростом за останню годину:\n"
-    for coin in coins[:10]:
-        response += (
-            f"\n🔹 {coin['symbol']}\n"
-            f"Ціна закриття минулої години: {coin['prev_close']}\n"
-            f"Ціна закриття поточної години: {coin['current_close']}\n"
-            f"Зміна за 1h: {coin['change_1h']}%\n"
-        )
-    await message.answer(response)
+        await asyncio.sleep(300)  # 5 хвилин
 
-@dp.message()
-async def get_chat_id(message: Message):
-    await message.answer(f"Ваш chat_id: {message.chat.id}")
+async def send_start_message():
+    await bot.send_message(CHAT_ID, "Привіт! Бот запущено ✅")
 
-# --- FastAPI: Webhook handler
-@app.on_event("startup")
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"Webhook set to {WEBHOOK_URL}")
+# --- Запуск
+async def main():
+    await send_start_message()
+    asyncio.create_task(send_price_updates())
+    await dp.start_polling(bot)
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    await bot.delete_webhook()
-
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(request: StarletteRequest):
-    update = types.Update.model_validate(await request.json())
-    await dp.feed_update(bot, update)
-    return Response(status_code=200)
+if __name__ == "__main__":
+    asyncio.run(main())
