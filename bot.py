@@ -3,8 +3,8 @@ import asyncio
 import os
 from aiogram import Bot, Dispatcher
 
-TOKEN = os.getenv("BOT_TOKEN")  # Витягуємо з env
-CHAT_ID = os.getenv("CHAT_ID")  # Витягуємо з env
+TOKEN = os.getenv("7478737876:AAH7CXfRuGhn8Jb1fyVUAcsGrQbTd1hK5K4")  # Витягуємо з env
+CHAT_ID = os.getenv("5250184593")  # Витягуємо з env
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
