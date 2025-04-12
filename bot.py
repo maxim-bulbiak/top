@@ -3,18 +3,20 @@ import asyncio
 import os
 import aiogram
 
-print("Aiogram version:", aiogram.__version__)
 
 from fastapi import FastAPI, Request
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
 from aiogram.filters import Command
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiogram.webhook.fastapi import WebhookRequestHandler
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler
+
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
 
 API_TOKEN = os.getenv("BOT_TOKEN", "7478737876:AAH7CXfRuGhn8Jb1fyVUAcsGrQbTd1hK5K4")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-app-name.onrender.com/webhook")
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"https://your-app-name.onrender.com{WEBHOOK_PATH}")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -62,7 +64,7 @@ async def handle_top_command(message: Message):
     coins = await parse_top_coins()
 
     if not coins:
-        await message.answer("Жоден токен не виріс більше ніж на 1% за останню годину.")
+        await message.answer("Жоден токен не виріс більше ніж на 3% за останню годину.")
         return
 
     response = "Топ токени з приростом за останню годину:\n"
@@ -79,7 +81,7 @@ async def handle_top_command(message: Message):
 async def get_chat_id(message: Message):
     await message.answer(f"Ваш chat_id: {message.chat.id}")
 
-# --- FastAPI маршрути
+# --- FastAPI: Webhook handler
 @app.on_event("startup")
 async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
@@ -89,5 +91,8 @@ async def on_startup():
 async def on_shutdown():
     await bot.delete_webhook()
 
-# Обробка запитів Telegram → FastAPI → Dispatcher
-app.post("/webhook")(WebhookRequestHandler(dp, bot).handle)
+@app.post(WEBHOOK_PATH)
+async def telegram_webhook(request: StarletteRequest):
+    update = types.Update.model_validate(await request.json())
+    await dp.feed_update(bot, update)
+    return Response(status_code=200)
